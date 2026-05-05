@@ -446,8 +446,10 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
         ctx.stroke();
       }
 
+      const showLabel = feature.properties?.showLabel !== false;
+
       // Label
-      if (name) {
+      if (name && showLabel) {
         const [cx, cy] = getCentroid(ring);
         ctx.font = getScaledFont(style.labelFont, fontScale);
         ctx.textAlign = 'center';
@@ -474,7 +476,8 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
       }
       ctx.stroke();
       ctx.setLineDash([]);
-      if (name && pts.length >= 2) {
+      const showLabel = feature.properties?.showLabel !== false;
+      if (name && pts.length >= 2 && showLabel) {
         const mid = pts[Math.floor(pts.length / 2)];
         ctx.font = getScaledFont(style.labelFont, fontScale);
         ctx.textAlign = 'center';
@@ -501,7 +504,8 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
         ctx.fillStyle = colors.stroke;
         ctx.fill();
       }
-      if (name) {
+      const showLabel = feature.properties?.showLabel !== false;
+      if (name && showLabel) {
         ctx.font = getScaledFont(style.labelFont, fontScale);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';

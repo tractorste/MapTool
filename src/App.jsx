@@ -461,14 +461,15 @@ function App() {
                 </select>
               </div>
               
-              <div className="form-group">
-                <label>Description (Optional)</label>
-                <textarea 
-                  value={selectedFeature.properties.description || ''} 
-                  onChange={(e) => handlePropertyChange('description', e.target.value)}
-                  placeholder="Additional notes..."
-                  rows={3}
-                />
+              <div className="form-group checkbox-group">
+                <label className="checkbox-label">
+                  <input 
+                    type="checkbox" 
+                    checked={selectedFeature.properties.showLabel !== false} 
+                    onChange={(e) => handlePropertyChange('showLabel', e.target.checked)}
+                  />
+                  Show Label on Map
+                </label>
               </div>
             </div>
           </div>

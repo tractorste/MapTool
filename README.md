@@ -1,16 +1,55 @@
-# React + Vite
+# Farm Mapping Tool
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A custom mapping tool for farm management, allowing users to overlay vector features on satellite imagery, draw polygons, lines, and points, and manage farm data.
 
-Currently, two official plugins are available:
+## Getting Started
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Follow these instructions to get the project up and running on your local machine.
 
-## React Compiler
+### Prerequisites
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Make sure you have [Node.js](https://nodejs.org/) installed on your system.
 
-## Expanding the ESLint configuration
+### Installation
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+1. Clone the repository or download the source code.
+2. Open your terminal and navigate to the project directory:
+   ```bash
+   cd MapTool
+   ```
+3. Install the necessary dependencies:
+   ```bash
+   npm install
+   ```
+
+### Running the Application
+
+To start the development server and view the app in your browser:
+
+```bash
+npm run dev
+```
+
+The app will typically be available at `http://localhost:5173`.
+
+### Updating Modules
+
+To update the project's dependencies to their latest compatible versions, run:
+
+```bash
+npm update
+```
+
+## Features
+
+- **Satellite Imagery**: High-quality satellite base maps.
+- **Drawing Tools**: Create and edit polygons, lines, and points.
+- **Data Management**: Label features, assign categories, and export/import GeoJSON data.
+- **Layer Control**: Toggle visibility of different map layers.
+
+## Built With
+
+- [React](https://reactjs.org/) - UI Framework
+- [Vite](https://vitejs.dev/) - Build Tool
+- [MapLibre GL JS](https://maplibre.org/) - Mapping Engine
+- [Mapbox GL Draw](https://github.com/mapbox/mapbox-gl-draw) - Drawing Suite

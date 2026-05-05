@@ -3,7 +3,10 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
-import { Layers, Hexagon, GitCommit, MapPin, Trash2, MousePointer2, Save, Upload, X, Eye } from 'lucide-react';
+import { Layers, Hexagon, GitCommit, MapPin, Trash2, MousePointer2, Save, Upload, X, Eye, Palette } from 'lucide-react';
+import MapRendererModal from './MapRenderer';
+import { drawStyles } from './drawStyles';
+import './MapRenderer.css';
 import './App.css';
 
 const FARM_COORDINATES = [-1.643404322599725, 54.531969034128664];
@@ -45,10 +48,17 @@ const BASE_MAPS = {
 
 const FEATURE_TYPES = [
   { id: 'field', label: 'Field' },
+  { id: 'grass_field', label: 'Grass Field' },
+  { id: 'wood', label: 'Wood / Forest' },
   { id: 'building', label: 'Building' },
+  { id: 'house', label: 'House' },
+  { id: 'shed', label: 'Shed' },
   { id: 'road', label: 'Road / Path' },
   { id: 'fence', label: 'Fence' },
   { id: 'water', label: 'Water Source' },
+  { id: 'stream', label: 'Stream / Creek' },
+  { id: 'sand', label: 'Sand / Bare Ground' },
+  { id: 'tree', label: 'Individual Tree' },
   { id: 'gate', label: 'Gate' },
   { id: 'other', label: 'Other' },
   { id: 'unassigned', label: 'Unassigned' }
@@ -70,6 +80,9 @@ function App() {
   // Phase 4: Layer Management State
   const [hiddenTypes, setHiddenTypes] = useState(new Set());
   const [hiddenFeatures, setHiddenFeatures] = useState({});
+
+  // Artistic renderer state
+  const [showRenderer, setShowRenderer] = useState(false);
 
   const initLabelsLayer = () => {
     if (!map.current || map.current.getSource('labels-source')) return;
@@ -124,6 +137,7 @@ function App() {
     draw.current = new MapboxDraw({
       displayControlsDefault: false,
       userProperties: true,
+      styles: drawStyles
     });
 
     map.current.addControl(draw.current);
@@ -303,6 +317,9 @@ function App() {
           <button className="header-btn primary" onClick={handleExport}>
             <Save size={16} /> Save Map
           </button>
+          <button className="header-btn render-btn" onClick={() => setShowRenderer(true)}>
+            <Palette size={16} /> Render Map
+          </button>
         </div>
       </header>
 
@@ -458,6 +475,16 @@ function App() {
         )}
 
       </div>
+
+      {showRenderer && (
+        <MapRendererModal
+          features={[
+            ...(draw.current ? draw.current.getAll().features : []),
+            ...Object.values(hiddenFeatures)
+          ]}
+          onClose={() => setShowRenderer(false)}
+        />
+      )}
     </div>
   );
 }

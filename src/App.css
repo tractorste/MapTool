@@ -286,3 +286,48 @@
 .form-group textarea {
   resize: vertical;
 }
+
+.map-wrapper.picking-pos .maplibregl-canvas {
+  cursor: crosshair !important;
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.small-btn {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.small-btn:hover {
+  background: #f5f5f5;
+  border-color: #ccc;
+}
+
+.small-btn.active {
+  background: var(--secondary-color);
+  color: white;
+  border-color: var(--secondary-color);
+}
+
+.small-btn.secondary {
+  flex: 0 0 auto;
+  color: #666;
+}
+
+.help-text {
+  font-size: 0.75rem;
+  color: var(--secondary-color);
+  margin-top: 4px;
+  font-style: italic;
+}

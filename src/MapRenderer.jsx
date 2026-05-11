@@ -88,7 +88,7 @@ const MAP_STYLES = {
     colors: {
       field: { fill: '#e7f3d3', stroke: '#95a5a6', label: '#2c3e50' },
       grass_field: { fill: '#dcf0c0', stroke: '#95a5a6', label: '#2c3e50' },
-      wood: { fill: '#7bb369', stroke: '#27ae60', label: '#ffffff' },
+      wood: { fill: '#7bb369', stroke: '#27ae60', label: '#2c3e50' },
       building: { fill: '#e67e22', stroke: '#2c3e50', label: '#2c3e50' },
       house: { fill: '#f39c12', stroke: '#2c3e50', label: '#2c3e50' },
       shed: { fill: '#d35400', stroke: '#2c3e50', label: '#2c3e50' },
@@ -450,18 +450,32 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
 
       // Label
       if (name && showLabel) {
-        const [cx, cy] = getCentroid(ring);
+        let lx, ly;
+        if (feature.properties?.labelLng !== undefined && feature.properties?.labelLat !== undefined) {
+          [lx, ly] = project([feature.properties.labelLng, feature.properties.labelLat]);
+        } else {
+          [lx, ly] = getCentroid(ring);
+        }
+
+        const rotation = (feature.properties?.labelRotation || 0) * Math.PI / 180;
+
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(rotation);
+
         ctx.font = getScaledFont(style.labelFont, fontScale);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        if (styleName !== 'tolkien') {
-          ctx.fillStyle = 'rgba(255,255,255,0.75)';
-          const tw = ctx.measureText(name).width;
-          const th = 20 * fontScale;
-          ctx.fillRect(cx - tw / 2 - 4, cy - th / 2, tw + 8, th);
+
+        if (styleName !== 'simple') {
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = styleName === 'tolkien' ? 'rgba(245, 230, 200, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+          ctx.strokeText(name, 0, 0);
         }
+
         ctx.fillStyle = colors.label;
-        ctx.fillText(name, cx, cy);
+        ctx.fillText(name, 0, 0);
+        ctx.restore();
       }
     } else if (geom.type === 'LineString') {
       const pts = geom.coordinates.map(project);
@@ -478,12 +492,34 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
       ctx.setLineDash([]);
       const showLabel = feature.properties?.showLabel !== false;
       if (name && pts.length >= 2 && showLabel) {
-        const mid = pts[Math.floor(pts.length / 2)];
+        let lx, ly;
+        if (feature.properties?.labelLng !== undefined && feature.properties?.labelLat !== undefined) {
+          [lx, ly] = project([feature.properties.labelLng, feature.properties.labelLat]);
+        } else {
+          const mid = pts[Math.floor(pts.length / 2)];
+          lx = mid[0];
+          ly = mid[1] - (6 * fontScale);
+        }
+
+        const rotation = (feature.properties?.labelRotation || 0) * Math.PI / 180;
+
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(rotation);
+
         ctx.font = getScaledFont(style.labelFont, fontScale);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
+
+        if (styleName !== 'simple') {
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = styleName === 'tolkien' ? 'rgba(245, 230, 200, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+          ctx.strokeText(name, 0, 0);
+        }
+
         ctx.fillStyle = colors.label;
-        ctx.fillText(name, mid[0], mid[1] - (6 * fontScale));
+        ctx.fillText(name, 0, 0);
+        ctx.restore();
       }
     } else if (geom.type === 'Point') {
       const [px, py] = project(geom.coordinates);
@@ -506,11 +542,33 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
       }
       const showLabel = feature.properties?.showLabel !== false;
       if (name && showLabel) {
+        let lx, ly;
+        if (feature.properties?.labelLng !== undefined && feature.properties?.labelLat !== undefined) {
+          [lx, ly] = project([feature.properties.labelLng, feature.properties.labelLat]);
+        } else {
+          lx = px;
+          ly = py + style.pointRadius + (4 * fontScale);
+        }
+
+        const rotation = (feature.properties?.labelRotation || 0) * Math.PI / 180;
+
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(rotation);
+
         ctx.font = getScaledFont(style.labelFont, fontScale);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
+        
+        if (styleName !== 'simple') {
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = styleName === 'tolkien' ? 'rgba(245, 230, 200, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+          ctx.strokeText(name, 0, 0);
+        }
+
         ctx.fillStyle = colors.label;
-        ctx.fillText(name, px, py + style.pointRadius + (4 * fontScale));
+        ctx.fillText(name, 0, 0);
+        ctx.restore();
       }
     }
   });
@@ -536,7 +594,7 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
 // ── React Component ──
 export default function MapRendererModal({ features, onClose }) {
   const canvasRef = useRef(null);
-  const [activeStyle, setActiveStyle] = useState('simple');
+  const [activeStyle, setActiveStyle] = useState('ordnance');
   const [fontScale, setFontScale] = useState(1);
   const [zoom, setZoom] = useState(0.6); // Default zoom level to show more at once
   const scrollContainerRef = useRef(null);

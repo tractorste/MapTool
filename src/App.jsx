@@ -69,6 +69,9 @@ function App() {
   const map = useRef(null);
   const draw = useRef(null);
   const fileInputRef = useRef(null);
+  const pickingLabelPosRef = useRef(false);
+  const pickingFeatureIdRef = useRef(null);
+  const selectedFeatureRef = useRef(null);
   
   const [activeBaseMap, setActiveBaseMap] = useState('esri');
   const [showBasePicker, setShowBasePicker] = useState(false);
@@ -83,6 +86,11 @@ function App() {
 
   // Artistic renderer state
   const [showRenderer, setShowRenderer] = useState(false);
+  const [pickingLabelPos, setPickingLabelPos] = useState(false);
+
+  useEffect(() => {
+    pickingLabelPosRef.current = pickingLabelPos;
+  }, [pickingLabelPos]);
 
   const initLabelsLayer = () => {
     if (!map.current || map.current.getSource('labels-source')) return;
@@ -98,11 +106,12 @@ function App() {
       source: 'labels-source',
       layout: {
         'text-field': ['get', 'name'],
-        'text-variable-anchor': ['center', 'top', 'bottom', 'left', 'right'],
-        'text-radial-offset': 0.5,
+        'text-anchor': 'center',
         'text-justify': 'center',
         'text-size': 16,
         'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        'text-rotate': ['coalesce', ['get', 'labelRotation'], 0],
+        'text-rotation-alignment': 'viewport'
       },
       paint: {
         'text-color': '#ffffff',
@@ -117,7 +126,26 @@ function App() {
     if (!map.current || !map.current.getSource('labels-source')) return;
     if (draw.current) {
       const data = draw.current.getAll();
-      map.current.getSource('labels-source').setData(data);
+      
+      const labelFeatures = [];
+      data.features.forEach(f => {
+        if (f.properties?.showLabel === false) return;
+        if (!f.properties?.name) return;
+        
+        const labelFeature = { ...f };
+        if (f.properties?.labelLng !== undefined && f.properties?.labelLat !== undefined) {
+          labelFeature.geometry = {
+            type: 'Point',
+            coordinates: [f.properties.labelLng, f.properties.labelLat]
+          };
+        }
+        labelFeatures.push(labelFeature);
+      });
+
+      map.current.getSource('labels-source').setData({
+        type: 'FeatureCollection',
+        features: labelFeatures
+      });
     }
   };
 
@@ -153,12 +181,36 @@ function App() {
 
     map.current.on('draw.selectionchange', (e) => {
       if (e.features.length > 0) {
-        setSelectedFeature({
+        const feat = {
           id: e.features[0].id,
           properties: e.features[0].properties || {}
-        });
+        };
+        setSelectedFeature(feat);
+        selectedFeatureRef.current = feat;
       } else {
         setSelectedFeature(null);
+        selectedFeatureRef.current = null;
+        if (!pickingFeatureIdRef.current) {
+          setPickingLabelPos(false);
+        }
+      }
+    });
+
+    map.current.on('click', (e) => {
+      if (pickingLabelPosRef.current && pickingFeatureIdRef.current) {
+        const { lng, lat } = e.lngLat;
+        const featureId = pickingFeatureIdRef.current;
+        
+        // Update both the state and the MapboxDraw feature
+        draw.current.setFeatureProperty(featureId, 'labelLng', lng);
+        draw.current.setFeatureProperty(featureId, 'labelLat', lat);
+        
+        // Re-select the feature if it got deselected
+        draw.current.changeMode('simple_select', { featureIds: [featureId] });
+        
+        setPickingLabelPos(false);
+        pickingFeatureIdRef.current = null;
+        updateLabels();
       }
     });
   }, []);
@@ -201,6 +253,8 @@ function App() {
 
   const closePropertiesPanel = () => {
     setSelectedFeature(null);
+    setPickingLabelPos(false);
+    pickingFeatureIdRef.current = null;
     changeDrawMode('simple_select');
   };
 
@@ -323,7 +377,7 @@ function App() {
         </div>
       </header>
 
-      <div className="map-wrapper" ref={mapContainer}>
+      <div className={`map-wrapper ${pickingLabelPos ? 'picking-pos' : ''}`} ref={mapContainer}>
         {/* Floating Controls - Left */}
         <div className="floating-panel top-left">
           
@@ -471,6 +525,50 @@ function App() {
                   Show Label on Map
                 </label>
               </div>
+
+              {selectedFeature.properties.showLabel !== false && (
+                <>
+                  <div className="form-group">
+                    <label>Label Rotation: {selectedFeature.properties.labelRotation || 0}°</label>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="360" 
+                      value={selectedFeature.properties.labelRotation || 0} 
+                      onChange={(e) => handlePropertyChange('labelRotation', parseInt(e.target.value))} 
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Label Position</label>
+                    <div className="button-row">
+                      <button 
+                        className={`small-btn ${pickingLabelPos ? 'active' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const isPicking = !pickingLabelPos;
+                          setPickingLabelPos(isPicking);
+                          pickingFeatureIdRef.current = isPicking ? selectedFeature.id : null;
+                        }}
+                      >
+                        {pickingLabelPos ? 'Click on Map...' : 'Set Custom Position'}
+                      </button>
+                      {(selectedFeature.properties.labelLng !== undefined) && (
+                        <button 
+                          className="small-btn secondary"
+                          onClick={() => {
+                            handlePropertyChange('labelLng', undefined);
+                            handlePropertyChange('labelLat', undefined);
+                          }}
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                    {pickingLabelPos && <p className="help-text">Click anywhere on the map to place the label.</p>}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

@@ -1,0 +1,7 @@
+services:
+  maptool:
+    build:
+      context: .
+    image: maptool:latest
+    ports:
+      - "8080:80"

@@ -53,3 +53,11 @@ npm update
 - [Vite](https://vitejs.dev/) - Build Tool
 - [MapLibre GL JS](https://maplibre.org/) - Mapping Engine
 - [Mapbox GL Draw](https://github.com/mapbox/mapbox-gl-draw) - Drawing Suite
+
+## Notes To Self
+
+### Building Docker Image
+
+docker build -t tractorste/maptool:latest .
+docker login
+docker push tractorste/maptool:latest

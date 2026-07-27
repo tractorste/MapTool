@@ -9,7 +9,7 @@ import { drawStyles } from './drawStyles';
 import './MapRenderer.css';
 import './App.css';
 
-const FARM_COORDINATES = [-1.643404322599725, 54.531969034128664];
+const FARM_COORDINATES = [-1.5, 52.5];
 
 const BASE_MAPS = {
   esri: {

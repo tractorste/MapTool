@@ -1,3 +1,12 @@
+import { byType, DASHED_TYPES, DEFAULT_COLOR } from './featureTypes';
+
+// Mapbox Draw styles. Inactive features are coloured by their type (Draw exposes the
+// feature's properties with a `user_` prefix); the selected feature is orange.
+const typeColor = byType('user_type', t => t.color, DEFAULT_COLOR);
+const typeWidth = byType('user_type', t => t.width, 2);
+const dashed = ['in', 'user_type', ...DASHED_TYPES];
+const solid = ['!in', 'user_type', ...DASHED_TYPES];
+
 export const drawStyles = [
   // POLYGON FILL
   {
@@ -5,9 +14,9 @@ export const drawStyles = [
     'type': 'fill',
     'filter': ['all', ['==', 'active', 'false'], ['==', '$type', 'Polygon']],
     'paint': {
-      'fill-color': '#3bb2d0',
-      'fill-outline-color': '#3bb2d0',
-      'fill-opacity': 0.1
+      'fill-color': typeColor,
+      'fill-outline-color': typeColor,
+      'fill-opacity': 0.15
     }
   },
   {
@@ -34,14 +43,27 @@ export const drawStyles = [
   {
     'id': 'gl-draw-line-inactive',
     'type': 'line',
-    'filter': ['all', ['==', 'active', 'false'], ['==', '$type', 'LineString']],
+    'filter': ['all', ['==', 'active', 'false'], ['==', '$type', 'LineString'], solid],
     'layout': {
       'line-cap': 'round',
       'line-join': 'round'
     },
     'paint': {
-      'line-color': '#3bb2d0',
-      'line-width': 2
+      'line-color': typeColor,
+      'line-width': typeWidth
+    }
+  },
+  {
+    'id': 'gl-draw-line-inactive-dashed',
+    'type': 'line',
+    'filter': ['all', ['==', 'active', 'false'], ['==', '$type', 'LineString'], dashed],
+    'layout': {
+      'line-join': 'round'
+    },
+    'paint': {
+      'line-color': typeColor,
+      'line-width': typeWidth,
+      'line-dasharray': [2, 1.5]
     }
   },
   {
@@ -68,7 +90,7 @@ export const drawStyles = [
       'line-join': 'round'
     },
     'paint': {
-      'line-color': '#3bb2d0',
+      'line-color': typeColor,
       'line-width': 2
     }
   },
@@ -93,7 +115,9 @@ export const drawStyles = [
     'filter': ['all', ['==', 'active', 'false'], ['==', '$type', 'Point'], ['!=', 'meta', 'midpoint']],
     'paint': {
       'circle-radius': 5,
-      'circle-color': '#3bb2d0'
+      'circle-color': typeColor,
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 1
     }
   },
   {

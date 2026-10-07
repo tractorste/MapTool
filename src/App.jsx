@@ -3,9 +3,11 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
-import { Layers, Hexagon, GitCommit, MapPin, Trash2, MousePointer2, Save, Upload, X, Eye, Palette } from 'lucide-react';
+import { Layers, Hexagon, GitCommit, MapPin, Trash2, MousePointer2, Save, Upload, X, Eye, Palette, Sparkles } from 'lucide-react';
 import MapRendererModal from './MapRenderer';
 import { drawStyles } from './drawStyles';
+import { FEATURE_GROUPS, FEATURE_TYPES, fitsGeometry } from './featureTypes';
+import SuggestionsPanel from './Suggestions';
 import './MapRenderer.css';
 import './App.css';
 
@@ -46,23 +48,8 @@ const BASE_MAPS = {
   }
 };
 
-const FEATURE_TYPES = [
-  { id: 'field', label: 'Field' },
-  { id: 'grass_field', label: 'Grass Field' },
-  { id: 'wood', label: 'Wood / Forest' },
-  { id: 'building', label: 'Building' },
-  { id: 'house', label: 'House' },
-  { id: 'shed', label: 'Shed' },
-  { id: 'road', label: 'Road / Path' },
-  { id: 'fence', label: 'Fence' },
-  { id: 'water', label: 'Water Source' },
-  { id: 'stream', label: 'Stream / Creek' },
-  { id: 'sand', label: 'Sand / Bare Ground' },
-  { id: 'tree', label: 'Individual Tree' },
-  { id: 'gate', label: 'Gate' },
-  { id: 'other', label: 'Other' },
-  { id: 'unassigned', label: 'Unassigned' }
-];
+// Work in progress is kept in the browser, so a refresh or a closed tab doesn't lose it.
+const AUTOSAVE_KEY = 'maptool-autosave';
 
 function App() {
   const mapContainer = useRef(null);
@@ -87,6 +74,13 @@ function App() {
   // Artistic renderer state
   const [showRenderer, setShowRenderer] = useState(false);
   const [pickingLabelPos, setPickingLabelPos] = useState(false);
+
+  // Suggestions to review, and the ids of ones rejected (saved in the map file)
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [pendingSuggestions, setPendingSuggestions] = useState([]);
+  const [rejectedSuggestions, setRejectedSuggestions] = useState(new Set());
+  const [changeCount, setChangeCount] = useState(0);
+  const markChanged = () => setChangeCount(c => c + 1);
 
   useEffect(() => {
     pickingLabelPosRef.current = pickingLabelPos;
@@ -149,6 +143,23 @@ function App() {
     }
   };
 
+  // --- autosave
+  const restoreAutosave = () => {
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY) || 'null'); } catch { saved = null; }
+    if (!saved?.features?.length && !saved?.suggestions?.length) return;
+    const when = new Date(saved.savedAt).toLocaleString();
+    if (!window.confirm(`Carry on from your unsaved work (${saved.features.length} features, autosaved ${when})?\n\nCancel starts with an empty map (use Import Data to open a file).`)) {
+      try { localStorage.removeItem(AUTOSAVE_KEY); } catch { /* storage unavailable */ }
+      return;
+    }
+    draw.current.add({ type: 'FeatureCollection', features: saved.features });
+    setRejectedSuggestions(new Set(saved.rejected || []));
+    setPendingSuggestions(saved.suggestions || []);
+    if (saved.center) map.current.jumpTo({ center: saved.center, zoom: saved.zoom });
+    updateLabels();
+  };
+
   useEffect(() => {
     if (map.current) return;
 
@@ -169,20 +180,23 @@ function App() {
     });
 
     map.current.addControl(draw.current);
+    if (import.meta.env.DEV) window.__maptool = { map: map.current, draw: draw.current };  // for testing
 
     map.current.on('load', () => {
       initLabelsLayer();
+      restoreAutosave();
     });
 
     map.current.on('draw.modechange', (e) => setDrawMode(e.mode));
-    map.current.on('draw.create', updateLabels);
-    map.current.on('draw.update', updateLabels);
-    map.current.on('draw.delete', updateLabels);
+    map.current.on('draw.create', () => { updateLabels(); markChanged(); });
+    map.current.on('draw.update', () => { updateLabels(); markChanged(); });
+    map.current.on('draw.delete', () => { updateLabels(); markChanged(); });
 
     map.current.on('draw.selectionchange', (e) => {
       if (e.features.length > 0) {
         const feat = {
           id: e.features[0].id,
+          geometryType: e.features[0].geometry?.type,
           properties: e.features[0].properties || {}
         };
         setSelectedFeature(feat);
@@ -249,6 +263,7 @@ function App() {
 
     draw.current.setFeatureProperty(selectedFeature.id, key, value);
     updateLabels();
+    markChanged();
   };
 
   const closePropertiesPanel = () => {
@@ -314,6 +329,9 @@ function App() {
       type: 'FeatureCollection',
       features: [...activeFeatures, ...hiddenFeats]
     };
+    if (rejectedSuggestions.size) {
+      geojson.rejected_suggestions = [...rejectedSuggestions].sort();
+    }
     
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(geojson, null, 2));
     const a = document.createElement('a');
@@ -335,11 +353,14 @@ function App() {
         draw.current.deleteAll();
         setHiddenFeatures({});
         setHiddenTypes(new Set());
+        setRejectedSuggestions(new Set(geojson.rejected_suggestions || []));
+        setPendingSuggestions([]);
         
         // MapboxDraw automatically generates IDs if missing, but we ensure all features go to active map
-        const ids = draw.current.add(geojson);
+        draw.current.add(geojson);
         
         updateLabels();
+        markChanged();
         alert('Map data loaded successfully!');
       } catch (err) {
         alert('Failed to parse the file. Ensure it is a valid GeoJSON.');
@@ -350,6 +371,33 @@ function App() {
     // Reset input
     e.target.value = null;
   };
+
+  useEffect(() => {
+    if (!changeCount && !pendingSuggestions.length && !rejectedSuggestions.size) return;
+    const t = setTimeout(() => {
+      if (!draw.current) return;
+      const saved = {
+        savedAt: Date.now(),
+        features: [...draw.current.getAll().features, ...Object.values(hiddenFeatures)],
+        rejected: [...rejectedSuggestions],
+        suggestions: pendingSuggestions,
+        center: map.current?.getCenter().toArray(),
+        zoom: map.current?.getZoom(),
+      };
+      try { localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(saved)); } catch (err) { console.warn('Autosave failed', err); }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [changeCount, pendingSuggestions, rejectedSuggestions, hiddenFeatures]);
+
+  const typeOptions = (geometryType, current) => FEATURE_GROUPS.map(g => {
+    const types = FEATURE_TYPES.filter(t => t.group === g && t.id !== 'unassigned' &&
+      (t.id === current || fitsGeometry(t, geometryType)));
+    return types.length ? (
+      <optgroup key={g} label={g}>
+        {types.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+      </optgroup>
+    ) : null;
+  });
 
   return (
     <div className="app-container">
@@ -370,6 +418,9 @@ function App() {
           />
           <button className="header-btn primary" onClick={handleExport}>
             <Save size={16} /> Save Map
+          </button>
+          <button className={`header-btn ${showSuggestions ? 'active' : ''}`} onClick={() => setShowSuggestions(s => !s)}>
+            <Sparkles size={16} /> Suggestions{pendingSuggestions.length ? ` (${pendingSuggestions.length})` : ''}
           </button>
           <button className="header-btn render-btn" onClick={() => setShowRenderer(true)}>
             <Palette size={16} /> Render Map
@@ -423,17 +474,23 @@ function App() {
             </button>
 
             {showLayerToggle && (
-              <div className="dropdown-menu">
+              <div className="dropdown-menu layers-menu">
                 <h3>Visible Layers</h3>
-                {FEATURE_TYPES.map(type => (
-                  <label key={type.id} className="radio-label">
-                    <input 
-                      type="checkbox" 
-                      checked={!hiddenTypes.has(type.id)}
-                      onChange={() => toggleLayerType(type.id)}
-                    />
-                    {type.label}
-                  </label>
+                {FEATURE_GROUPS.map(g => (
+                  <div key={g} className="layer-group">
+                    <h4>{g}</h4>
+                    {FEATURE_TYPES.filter(t => t.group === g).map(type => (
+                      <label key={type.id} className="radio-label">
+                        <input
+                          type="checkbox"
+                          checked={!hiddenTypes.has(type.id)}
+                          onChange={() => toggleLayerType(type.id)}
+                        />
+                        <span className="swatch" style={{ background: type.color }} />
+                        {type.label}
+                      </label>
+                    ))}
+                  </div>
                 ))}
               </div>
             )}
@@ -509,9 +566,7 @@ function App() {
                   onChange={(e) => handlePropertyChange('type', e.target.value)}
                 >
                   <option value="">Select a type...</option>
-                  {FEATURE_TYPES.filter(t => t.id !== 'unassigned').map(t => (
-                    <option key={t.id} value={t.id}>{t.label}</option>
-                  ))}
+                  {typeOptions(selectedFeature.geometryType, selectedFeature.properties.type)}
                 </select>
               </div>
               
@@ -573,6 +628,17 @@ function App() {
           </div>
         )}
 
+        <SuggestionsPanel
+          map={map}
+          draw={draw}
+          visible={showSuggestions && !selectedFeature}
+          pending={pendingSuggestions}
+          setPending={setPendingSuggestions}
+          rejected={rejectedSuggestions}
+          setRejected={setRejectedSuggestions}
+          onAdded={() => { updateLabels(); markChanged(); }}
+          onClose={() => setShowSuggestions(false)}
+        />
       </div>
 
       {showRenderer && (

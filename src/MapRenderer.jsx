@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { X, Download, Palette } from 'lucide-react';
+import { renderColors, TYPE_BY_ID } from './featureTypes';
 
 // ── Style Definitions ──
 const MAP_STYLES = {
@@ -408,7 +409,8 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
     const geom = feature.geometry;
     if (!geom) return;
     const fType = feature.properties?.type || 'unassigned';
-    const colors = style.colors[fType] || style.colors.unassigned;
+    const colors = renderColors(style.colors, fType);
+    const kind = TYPE_BY_ID[fType]?.like || fType;  // newer types draw like the older one
     const name = feature.properties?.name || '';
 
     if (geom.type === 'Polygon') {
@@ -482,11 +484,15 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
       ctx.beginPath();
       pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
       ctx.strokeStyle = colors.stroke;
-      ctx.lineWidth = (fType === 'road' || fType === 'stream') ? style.lineWidth * 2.5 : style.lineWidth * 1.5;
+      const widthScale = { a_road: 3.5, b_road: 3, footpath: 1, hedge: 2.5, stone_wall: 2 }[fType]
+        ?? ((kind === 'road' || kind === 'stream') ? 2.5 : 1.5);
+      ctx.lineWidth = style.lineWidth * widthScale;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      if ((styleName === 'tolkien' || styleName === 'ordnance') && fType === 'fence') {
+      if ((styleName === 'tolkien' || styleName === 'ordnance') && kind === 'fence' && fType !== 'stone_wall') {
         ctx.setLineDash([6, 4]);
+      } else if (fType === 'footpath') {
+        ctx.setLineDash([style.lineWidth * 3, style.lineWidth * 2]);
       }
       ctx.stroke();
       ctx.setLineDash([]);
@@ -523,7 +529,7 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
       }
     } else if (geom.type === 'Point') {
       const [px, py] = project(geom.coordinates);
-      if (fType === 'tree' && (styleName === 'cartoon' || styleName === 'tolkien')) {
+      if (kind === 'tree' && (styleName === 'cartoon' || styleName === 'tolkien')) {
         drawTreeIcon(ctx, px, py, styleName);
       } else {
         ctx.beginPath();

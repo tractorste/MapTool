@@ -105,8 +105,12 @@ carry on from there. It is per browser - always **Save Map** to keep a proper co
 
 ## Notes To Self
 
-### Building Docker Image
+### Deploying (Docker on the M73 server)
 
-docker build -t tractorste/maptool:latest .
-docker login
-docker push tractorste/maptool:latest
+The server's `docker-compose.yml` (github.com/tractorste/server) builds the image straight
+from this repo's `main` branch - no image registry. To update the running tool after
+pushing to `main`, on the server:
+
+    cd ~/server
+    docker compose build --pull maptool
+    docker compose up -d maptool

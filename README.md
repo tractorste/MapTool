@@ -47,6 +47,8 @@ npm update
 - **Data Management**: Label features, assign categories, and export/import GeoJSON data.
 - **Suggestions**: Review features found automatically (e.g. from LiDAR) and accept, edit or reject them.
 - **Layer Control**: Toggle visibility of different map layers.
+- **Land**: acres, owners and land value for fields and woods.
+- **Render Map**: printable maps (A4 / A3, PNG or PDF) with owner colours and a legend.
 
 ## Feature Types
 
@@ -90,6 +92,36 @@ Suggestions file format: a FeatureCollection whose features have properties
 (shown to the reviewer) and optionally `name`, `height`, `width`, `surface` (copied onto
 the accepted feature).
 
+## Land: acres, value and owners
+
+Fields, Grass Fields and Woods show extra details in **Feature Properties**:
+
+- **Area** in acres, worked out from the shape (updates as you reshape it).
+- **Owner**: type a name, or pick one already used. Each owner gets a colour (click the
+  swatch to change it).
+- **Price per acre (£)**, and the **Land value** it gives (acres × price).
+
+These are saved on each feature as `owner` and `price_per_acre`; owner colours are saved at
+the top level of the map file as `owner_colors` (`{ "Owner": "#rrggbb" }`). The eye menu has
+**Show acres on field labels** for the satellite map.
+
+## Render Map
+
+Down the left of the render preview:
+
+- **Map Style**: Simple, Cartoon, Tolkien or Ordnance Survey.
+- **Page**: Screen (2400 × 1600), **A4** or **A3** (landscape or portrait, drawn at 300 dpi),
+  a title (blank for none), font size and preview zoom.
+- **Labels & Land**: labels on/off, and acres and land value under field names.
+- **Owners**: highlight fields and woods in their owner's colour, choose which owners are
+  shown and their colours, and a legend (with each owner's total acres and value).
+- **Categories**: tick which feature types are drawn; the map is framed to what's shown.
+
+**Download PNG** or **Download PDF** (the PDF is page-sized for A4 / A3). The choices are
+remembered in the browser for next time.
+
+When a map file is opened with **Import Data**, the map moves to fit the hand-drawn features.
+
 ## Autosave
 
 Work in progress (features, suggestions still to review, rejections) is kept in the
@@ -102,6 +134,7 @@ carry on from there. It is per browser - always **Save Map** to keep a proper co
 - [Vite](https://vitejs.dev/) - Build Tool
 - [MapLibre GL JS](https://maplibre.org/) - Mapping Engine
 - [Mapbox GL Draw](https://github.com/mapbox/mapbox-gl-draw) - Drawing Suite
+- [jsPDF](https://github.com/parallax/jsPDF) - PDF export
 
 ## Notes To Self
 

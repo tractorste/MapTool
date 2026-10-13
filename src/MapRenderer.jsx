@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { X, Download, Palette } from 'lucide-react';
-import { renderColors, TYPE_BY_ID } from './featureTypes';
+import { X, Download, Palette, FileText } from 'lucide-react';
+import { FEATURE_GROUPS, FEATURE_TYPES, renderColors, TYPE_BY_ID } from './featureTypes';
+import { acresOf, formatAcres, formatMoney, isLandType, landValue, ownersOf } from './land';
 
 // ── Style Definitions ──
 const MAP_STYLES = {
@@ -373,17 +374,154 @@ function getCentroid(points) {
   return [sx / points.length, sy / points.length];
 }
 
+// Labels: the first line (the name) in the style's label font, any more (acres, value) a
+// bit smaller. Empty lines are left out. `anchor` is where (x, y) is on the block of text:
+// 'middle', 'bottom' or 'top'.
+function drawLabel(ctx, allLines, x, y, anchor, rotationDeg, style, styleName, fontScale, color) {
+  const kept = allLines.map((text, i) => [text, i]).filter(([text]) => text);
+  if (!kept.length) return;
+  const lines = kept.map(([text]) => text);
+  const fonts = kept.map(([, i]) => i === 0
+    ? getScaledFont(style.labelFont, fontScale)
+    : getScaledFont(style.font, fontScale * 0.75));
+  const sizes = fonts.map(f => parseInt(f.match(/(\d+)px/)[1]));
+  const heights = sizes.map(s => s * 1.15);
+  const total = heights.reduce((a, b) => a + b, 0);
+  let ty = anchor === 'middle' ? -total / 2 : anchor === 'bottom' ? -total : 0;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotationDeg * Math.PI / 180);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  lines.forEach((text, i) => {
+    ctx.font = fonts[i];
+    if (styleName !== 'simple' || i > 0) {
+      ctx.lineWidth = 4;
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = styleName === 'tolkien' ? 'rgba(245, 230, 200, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+      ctx.strokeText(text, 0, ty);
+    }
+    ctx.fillStyle = color;
+    ctx.fillText(text, 0, ty);
+    ty += heights[i];
+  });
+  ctx.restore();
+}
+
+function labelPos(feature, project, fallback) {
+  const p = feature.properties || {};
+  if (p.labelLng !== undefined && p.labelLat !== undefined) return project([p.labelLng, p.labelLat]);
+  return fallback;
+}
+
+// Owner key: a colour swatch, the owner, and their total acres / value.
+function drawLegend(ctx, entries, W, H, style, styleName, fontScale, opts) {
+  if (!entries.length) return;
+  const titleFont = getScaledFont(style.labelFont, fontScale * 1.1);
+  const rowFont = getScaledFont(style.font, fontScale);
+  const rowSize = parseInt(rowFont.match(/(\d+)px/)[1]);
+  const titleSize = parseInt(titleFont.match(/(\d+)px/)[1]);
+  const rowH = rowSize * 1.6;
+  const pad = 20;
+  const swatch = rowSize * 1.1;
+
+  const detail = (e) => [
+    opts.showAcres ? formatAcres(e.acres) : null,
+    opts.showValue && e.value ? formatMoney(e.value) : null,
+  ].filter(Boolean).join('  ·  ');
+  const rows = [...entries];
+  if (entries.length > 1 && (opts.showAcres || opts.showValue)) {
+    rows.push({
+      owner: 'Total', total: true,
+      acres: entries.reduce((s, e) => s + e.acres, 0),
+      value: entries.reduce((s, e) => s + (e.value || 0), 0),
+    });
+  }
+
+  ctx.save();
+  ctx.font = rowFont;
+  let nameW = 0, detailW = 0;
+  rows.forEach(e => {
+    ctx.font = e.total ? getScaledFont(style.labelFont, fontScale) : rowFont;
+    nameW = Math.max(nameW, ctx.measureText(e.owner).width);
+    detailW = Math.max(detailW, ctx.measureText(detail(e)).width);
+  });
+  ctx.font = titleFont;
+  const titleW = ctx.measureText('Owners').width;
+  const boxW = Math.max(titleW, swatch + 12 + nameW + (detailW ? 28 + detailW : 0)) + pad * 2;
+  const boxH = pad * 2 + titleSize * 1.4 + rows.length * rowH;
+  const x = 56, y = H - 56 - boxH;
+
+  ctx.fillStyle = styleName === 'tolkien' ? 'rgba(245, 230, 200, 0.92)' : 'rgba(255, 255, 255, 0.92)';
+  ctx.strokeStyle = styleName === 'tolkien' ? '#8d6e63' : '#90a4ae';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.rect(x, y, boxW, boxH);
+  ctx.fill();
+  ctx.stroke();
+
+  const ink = styleName === 'tolkien' ? '#3e2723' : '#263238';
+  ctx.fillStyle = ink;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.font = titleFont;
+  ctx.fillText('Owners', x + pad, y + pad);
+
+  let ry = y + pad + titleSize * 1.4;
+  rows.forEach(e => {
+    const cy = ry + rowH / 2;
+    if (e.total) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x + pad, ry + 2);
+      ctx.lineTo(x + boxW - pad, ry + 2);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = e.color;
+      ctx.globalAlpha = 0.75;
+      ctx.fillRect(x + pad, cy - swatch / 2, swatch, swatch);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x + pad, cy - swatch / 2, swatch, swatch);
+    }
+    ctx.fillStyle = ink;
+    ctx.textBaseline = 'middle';
+    ctx.font = e.total ? getScaledFont(style.labelFont, fontScale) : rowFont;
+    ctx.fillText(e.owner, x + pad + swatch + 12, cy);
+    const d = detail(e);
+    if (d) {
+      ctx.textAlign = 'right';
+      ctx.fillText(d, x + boxW - pad, cy);
+      ctx.textAlign = 'left';
+    }
+    ry += rowH;
+  });
+  ctx.restore();
+}
+
 // ── Main render function ──
-function renderMap(canvas, features, styleName, fontScale = 1) {
+// opts: styleName, fontScale, title, hiddenTypes (Set), showLabels, showAcres, showValue,
+//       showOwners, hiddenOwners (Set), ownerColors, showLegend
+function renderMap(canvas, allFeatures, W, H, opts) {
+  const { styleName, fontScale } = opts;
   const style = MAP_STYLES[styleName];
   const ctx = canvas.getContext('2d');
-  const W = canvas.width;
-  const H = canvas.height;
+  ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+
+  const features = allFeatures.filter(f => !opts.hiddenTypes.has(f.properties?.type || 'unassigned'));
+  const ownerColor = (f) => {
+    const owner = f.properties?.owner?.trim();
+    if (!opts.showOwners || !owner || !isLandType(f.properties?.type) || opts.hiddenOwners.has(owner)) return null;
+    return opts.ownerColors[owner] || null;
+  };
 
   // Background
   ctx.fillStyle = style.bg;
   ctx.fillRect(0, 0, W, H);
-  
+
   if (styleName === 'ordnance') drawGrid(ctx, W, H);
   if (styleName === 'tolkien') drawParchmentTexture(ctx, W, H);
 
@@ -396,6 +534,7 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
     return;
   }
 
+  // Frame what is switched on, so e.g. just the fields fill the page
   const bbox = getBBox(features);
   const project = makeProjection(bbox, W, H, 80);
 
@@ -405,6 +544,9 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
     return (order[a.geometry?.type] ?? 1) - (order[b.geometry?.type] ?? 1);
   });
 
+  // Labels go on top of everything, so a line or a neighbouring field can't cover them
+  const labels = [];
+
   sorted.forEach(feature => {
     const geom = feature.geometry;
     if (!geom) return;
@@ -412,13 +554,18 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
     const colors = renderColors(style.colors, fType);
     const kind = TYPE_BY_ID[fType]?.like || fType;  // newer types draw like the older one
     const name = feature.properties?.name || '';
+    const showLabel = opts.showLabels && feature.properties?.showLabel !== false;
+    const rotation = feature.properties?.labelRotation || 0;
 
     if (geom.type === 'Polygon') {
       const ring = geom.coordinates[0].map(project);
+      const trace = () => {
+        ctx.beginPath();
+        ring.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+        ctx.closePath();
+      };
       // Fill
-      ctx.beginPath();
-      ring.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
-      ctx.closePath();
+      trace();
       ctx.fillStyle = colors.fill;
       ctx.globalAlpha = styleName === 'tolkien' ? 0.5 : 0.7;
       ctx.fill();
@@ -428,15 +575,33 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
       if (fType === 'water' || fType === 'stream') drawWaterTexture(ctx, ring, styleName);
       if (fType === 'wood') drawWoodTexture(ctx, ring, styleName);
       if (fType === 'sand') drawSandTexture(ctx, ring, styleName);
+      // Owner highlight
+      const oc = ownerColor(feature);
+      if (oc) {
+        trace();
+        ctx.fillStyle = oc;
+        ctx.globalAlpha = 0.45;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
       // Stroke
-      ctx.beginPath();
-      ring.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
-      ctx.closePath();
+      trace();
       ctx.strokeStyle = colors.stroke;
       ctx.lineWidth = style.lineWidth;
       if (styleName === 'cartoon') ctx.lineWidth = 4;
       ctx.stroke();
-      
+      if (oc) {
+        // Inside edge in the owner's colour, so neighbouring owners stay distinct
+        ctx.save();
+        trace();
+        ctx.clip();
+        trace();
+        ctx.strokeStyle = oc;
+        ctx.lineWidth = style.lineWidth * 3;
+        ctx.stroke();
+        ctx.restore();
+      }
+
       // Roof ridge for top-down building look
       if ((styleName === 'cartoon' || styleName === 'tolkien') && (fType === 'building' || fType === 'house' || fType === 'shed')) {
         const [cx, cy] = getCentroid(ring);
@@ -448,36 +613,17 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
         ctx.stroke();
       }
 
-      const showLabel = feature.properties?.showLabel !== false;
-
-      // Label
-      if (name && showLabel) {
-        let lx, ly;
-        if (feature.properties?.labelLng !== undefined && feature.properties?.labelLat !== undefined) {
-          [lx, ly] = project([feature.properties.labelLng, feature.properties.labelLat]);
-        } else {
-          [lx, ly] = getCentroid(ring);
+      if (showLabel) {
+        const lines = [name];
+        // Acres and value on fields and woods that are named or owned (not every scrap of
+        // OpenStreetMap woodland round about)
+        if (isLandType(fType) && (name || feature.properties?.owner?.trim())) {
+          lines.push(opts.showAcres ? formatAcres(acresOf(feature)) : '');
+          const value = landValue(feature);
+          if (opts.showValue && value !== null) lines.push(formatMoney(value));
         }
-
-        const rotation = (feature.properties?.labelRotation || 0) * Math.PI / 180;
-
-        ctx.save();
-        ctx.translate(lx, ly);
-        ctx.rotate(rotation);
-
-        ctx.font = getScaledFont(style.labelFont, fontScale);
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-
-        if (styleName !== 'simple') {
-          ctx.lineWidth = 4;
-          ctx.strokeStyle = styleName === 'tolkien' ? 'rgba(245, 230, 200, 0.8)' : 'rgba(255, 255, 255, 0.8)';
-          ctx.strokeText(name, 0, 0);
-        }
-
-        ctx.fillStyle = colors.label;
-        ctx.fillText(name, 0, 0);
-        ctx.restore();
+        const [lx, ly] = labelPos(feature, project, getCentroid(ring));
+        labels.push([lines, lx, ly, 'middle', rotation, colors.label]);
       }
     } else if (geom.type === 'LineString') {
       const pts = geom.coordinates.map(project);
@@ -496,36 +642,10 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
       }
       ctx.stroke();
       ctx.setLineDash([]);
-      const showLabel = feature.properties?.showLabel !== false;
       if (name && pts.length >= 2 && showLabel) {
-        let lx, ly;
-        if (feature.properties?.labelLng !== undefined && feature.properties?.labelLat !== undefined) {
-          [lx, ly] = project([feature.properties.labelLng, feature.properties.labelLat]);
-        } else {
-          const mid = pts[Math.floor(pts.length / 2)];
-          lx = mid[0];
-          ly = mid[1] - (6 * fontScale);
-        }
-
-        const rotation = (feature.properties?.labelRotation || 0) * Math.PI / 180;
-
-        ctx.save();
-        ctx.translate(lx, ly);
-        ctx.rotate(rotation);
-
-        ctx.font = getScaledFont(style.labelFont, fontScale);
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-
-        if (styleName !== 'simple') {
-          ctx.lineWidth = 4;
-          ctx.strokeStyle = styleName === 'tolkien' ? 'rgba(245, 230, 200, 0.8)' : 'rgba(255, 255, 255, 0.8)';
-          ctx.strokeText(name, 0, 0);
-        }
-
-        ctx.fillStyle = colors.label;
-        ctx.fillText(name, 0, 0);
-        ctx.restore();
+        const mid = pts[Math.floor(pts.length / 2)];
+        const [lx, ly] = labelPos(feature, project, [mid[0], mid[1] - 6 * fontScale]);
+        labels.push([[name], lx, ly, 'bottom', rotation, colors.label]);
       }
     } else if (geom.type === 'Point') {
       const [px, py] = project(geom.coordinates);
@@ -546,50 +666,44 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
         ctx.fillStyle = colors.stroke;
         ctx.fill();
       }
-      const showLabel = feature.properties?.showLabel !== false;
       if (name && showLabel) {
-        let lx, ly;
-        if (feature.properties?.labelLng !== undefined && feature.properties?.labelLat !== undefined) {
-          [lx, ly] = project([feature.properties.labelLng, feature.properties.labelLat]);
-        } else {
-          lx = px;
-          ly = py + style.pointRadius + (4 * fontScale);
-        }
-
-        const rotation = (feature.properties?.labelRotation || 0) * Math.PI / 180;
-
-        ctx.save();
-        ctx.translate(lx, ly);
-        ctx.rotate(rotation);
-
-        ctx.font = getScaledFont(style.labelFont, fontScale);
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        
-        if (styleName !== 'simple') {
-          ctx.lineWidth = 4;
-          ctx.strokeStyle = styleName === 'tolkien' ? 'rgba(245, 230, 200, 0.8)' : 'rgba(255, 255, 255, 0.8)';
-          ctx.strokeText(name, 0, 0);
-        }
-
-        ctx.fillStyle = colors.label;
-        ctx.fillText(name, 0, 0);
-        ctx.restore();
+        const [lx, ly] = labelPos(feature, project, [px, py + style.pointRadius + 4 * fontScale]);
+        labels.push([[name], lx, ly, 'top', rotation, colors.label]);
       }
     }
   });
 
+  labels.forEach(([lines, x, y, anchor, rotation, color]) =>
+    drawLabel(ctx, lines, x, y, anchor, rotation, style, styleName, fontScale, color));
+
   // Title
-  ctx.font = getScaledFont(styleName === 'tolkien'
-    ? 'italic bold 44px Georgia, serif'
-    : styleName === 'cartoon'
-      ? 'bold 44px "Comic Sans MS", cursive'
-      : 'bold 40px Inter, sans-serif', fontScale);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = styleName === 'tolkien' ? '#4e342e' : '#263238';
-  ctx.fillText('Farm Map', W / 2, 48);
- 
+  if (opts.title) {
+    ctx.font = getScaledFont(styleName === 'tolkien'
+      ? 'italic bold 44px Georgia, serif'
+      : styleName === 'cartoon'
+        ? 'bold 44px "Comic Sans MS", cursive'
+        : 'bold 40px Inter, sans-serif', fontScale);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = styleName === 'tolkien' ? '#4e342e' : '#263238';
+    ctx.fillText(opts.title, W / 2, 48);
+  }
+
+  // Owner legend
+  if (opts.showOwners && opts.showLegend) {
+    const byOwner = new Map();
+    features.forEach(f => {
+      if (!ownerColor(f)) return;
+      const owner = f.properties.owner.trim();
+      const e = byOwner.get(owner) || { owner, color: ownerColor(f), acres: 0, value: 0 };
+      e.acres += acresOf(f);
+      e.value += landValue(f) || 0;
+      byOwner.set(owner, e);
+    });
+    const entries = [...byOwner.values()].sort((a, b) => a.owner.localeCompare(b.owner));
+    drawLegend(ctx, entries, W, H, style, styleName, fontScale, opts);
+  }
+
   // Compass rose
   drawCompass(ctx, W - 110, H - 110, 44, styleName);
 
@@ -597,12 +711,56 @@ function renderMap(canvas, features, styleName, fontScale = 1) {
   drawBorder(ctx, W, H, styleName);
 }
 
+// ── Paper sizes ──
+// The map is laid out on a page 2400 units across its long side, then drawn at the
+// paper's print resolution, so A3 is the same map as A4 printed bigger.
+const PRINT_DPI = 300;
+const PAPERS = {
+  screen: { name: 'Screen', mm: null },
+  a4: { name: 'A4', mm: [297, 210] },
+  a3: { name: 'A3', mm: [420, 297] },
+};
+
+function pageLayout(paper, orientation) {
+  const mm = PAPERS[paper].mm;
+  let W = 2400, H = mm ? Math.round(2400 * mm[1] / mm[0]) : 1600;
+  let pxW = mm ? Math.round(mm[0] / 25.4 * PRINT_DPI) : 2400;
+  let pxH = mm ? Math.round(mm[1] / 25.4 * PRINT_DPI) : 1600;
+  let mmW = mm?.[0], mmH = mm?.[1];
+  if (orientation === 'portrait') {
+    [W, H] = [H, W];
+    [pxW, pxH] = [pxH, pxW];
+    [mmW, mmH] = [mmH, mmW];
+  }
+  return { W, H, pxW, pxH, mmW, mmH };
+}
+
+// Render choices are remembered in this browser between visits.
+const SETTINGS_KEY = 'maptool-render-settings';
+const DEFAULT_SETTINGS = {
+  style: 'ordnance', fontScale: 1, title: 'Farm Map', paper: 'screen', orientation: 'landscape',
+  hiddenTypes: [], showLabels: true, showAcres: true, showValue: false,
+  showOwners: true, showLegend: true, hiddenOwners: [],
+};
+
+function loadSettings() {
+  try {
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
 // ── React Component ──
-export default function MapRendererModal({ features, onClose }) {
+export default function MapRendererModal({ features, ownerColors, setOwnerColors, onClose }) {
   const canvasRef = useRef(null);
-  const [activeStyle, setActiveStyle] = useState('ordnance');
-  const [fontScale, setFontScale] = useState(1);
+  const [settings, setSettings] = useState(loadSettings);
+  const set = (key, value) => setSettings(s => ({ ...s, [key]: value }));
+  const toggleIn = (key, id) => setSettings(s => ({
+    ...s, [key]: s[key].includes(id) ? s[key].filter(x => x !== id) : [...s[key], id],
+  }));
   const [zoom, setZoom] = useState(0.6); // Default zoom level to show more at once
+  const [busy, setBusy] = useState(false);
   const scrollContainerRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
@@ -610,14 +768,33 @@ export default function MapRendererModal({ features, onClose }) {
   const [scrollLeft, setScrollLeft] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
 
+  const layout = pageLayout(settings.paper, settings.orientation);
+  const presentTypes = new Set(features.map(f => f.properties?.type || 'unassigned'));
+  const owners = ownersOf(features);
+
+  useEffect(() => {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* storage unavailable */ }
+  }, [settings]);
+
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    // High-detail resolution
-    canvas.width = 2400;
-    canvas.height = 1600;
-    renderMap(canvas, features, activeStyle, fontScale);
-  }, [features, activeStyle, fontScale]);
+    canvas.width = layout.pxW;
+    canvas.height = layout.pxH;
+    renderMap(canvas, features, layout.W, layout.H, {
+      styleName: settings.style,
+      fontScale: settings.fontScale,
+      title: settings.title,
+      hiddenTypes: new Set(settings.hiddenTypes),
+      showLabels: settings.showLabels,
+      showAcres: settings.showAcres,
+      showValue: settings.showValue,
+      showOwners: settings.showOwners,
+      showLegend: settings.showLegend,
+      hiddenOwners: new Set(settings.hiddenOwners),
+      ownerColors,
+    });
+  }, [features, settings, ownerColors, layout.W, layout.H, layout.pxW, layout.pxH]);
 
   const onMouseDown = (e) => {
     setIsDragging(true);
@@ -644,15 +821,35 @@ export default function MapRendererModal({ features, onClose }) {
 
   useEffect(() => { redraw(); }, [redraw]);
 
+  const fileBase = `farm_map_${settings.style}${settings.paper === 'screen' ? '' : `_${settings.paper}`}`;
+
   const handleDownload = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const link = document.createElement('a');
-    link.download = `farm_map_${activeStyle}.png`;
+    link.download = `${fileBase}.png`;
     link.href = canvas.toDataURL('image/png');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handlePdf = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    setBusy(true);
+    try {
+      const { jsPDF } = await import('jspdf');
+      const portrait = settings.orientation === 'portrait';
+      const pdf = layout.mmW
+        ? new jsPDF({ orientation: portrait ? 'portrait' : 'landscape', unit: 'mm', format: settings.paper })
+        : new jsPDF({ orientation: 'landscape', unit: 'px', format: [layout.pxW, layout.pxH], hotfixes: ['px_scaling'] });
+      const w = layout.mmW || layout.pxW, h = layout.mmH || layout.pxH;
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, w, h);
+      pdf.save(`${fileBase}.pdf`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -667,76 +864,161 @@ export default function MapRendererModal({ features, onClose }) {
           <button className="renderer-close" onClick={onClose}><X size={20} /></button>
         </div>
 
-        {/* Style & Adjustment Controls */}
-        <div className="renderer-controls">
-          <div className="control-group">
-            <h3>Map Style</h3>
-            <div className="renderer-styles">
-              {Object.entries(MAP_STYLES).map(([key, s]) => (
-                <button
-                  key={key}
-                  className={`style-card ${activeStyle === key ? 'active' : ''}`}
-                  onClick={() => setActiveStyle(key)}
-                >
-                  <span className="style-swatch" style={{ background: s.bg }} />
-                  <div className="style-info">
+        <div className="renderer-body">
+          {/* Options */}
+          <aside className="renderer-sidebar">
+            <section>
+              <h3>Map Style</h3>
+              <div className="renderer-styles">
+                {Object.entries(MAP_STYLES).map(([key, s]) => (
+                  <button
+                    key={key}
+                    className={`style-card ${settings.style === key ? 'active' : ''}`}
+                    onClick={() => set('style', key)}
+                  >
+                    <span className="style-swatch" style={{ background: s.bg }} />
                     <span className="style-name">{s.name}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section>
+              <h3>Page</h3>
+              <div className="segmented">
+                {Object.entries(PAPERS).map(([key, p]) => (
+                  <button key={key} className={settings.paper === key ? 'active' : ''} onClick={() => set('paper', key)}>
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+              {settings.paper !== 'screen' && (
+                <div className="segmented">
+                  {['landscape', 'portrait'].map(o => (
+                    <button key={o} className={settings.orientation === o ? 'active' : ''} onClick={() => set('orientation', o)}>
+                      {o === 'landscape' ? 'Landscape' : 'Portrait'}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <label className="field-label">
+                Title
+                <input type="text" value={settings.title} onChange={(e) => set('title', e.target.value)} placeholder="No title" />
+              </label>
+              <label className="field-label">
+                Font size: {Math.round(settings.fontScale * 100)}%
+                <input type="range" min="0.5" max="2.5" step="0.1" value={settings.fontScale}
+                  onChange={(e) => set('fontScale', parseFloat(e.target.value))} />
+              </label>
+              <label className="field-label">
+                Preview zoom: {Math.round(zoom * 100)}%
+                <input type="range" min="0.2" max="1.5" step="0.05" value={zoom}
+                  onChange={(e) => setZoom(parseFloat(e.target.value))} />
+              </label>
+            </section>
+
+            <section>
+              <h3>Labels &amp; Land</h3>
+              <label className="check">
+                <input type="checkbox" checked={settings.showLabels} onChange={(e) => set('showLabels', e.target.checked)} />
+                Labels
+              </label>
+              <label className={`check ${settings.showLabels ? '' : 'disabled'}`}>
+                <input type="checkbox" disabled={!settings.showLabels} checked={settings.showAcres}
+                  onChange={(e) => set('showAcres', e.target.checked)} />
+                Acres
+              </label>
+              <label className={`check ${settings.showLabels ? '' : 'disabled'}`}>
+                <input type="checkbox" disabled={!settings.showLabels} checked={settings.showValue}
+                  onChange={(e) => set('showValue', e.target.checked)} />
+                Land value
+              </label>
+            </section>
+
+            <section>
+              <h3>Owners</h3>
+              {owners.length === 0 ? (
+                <p className="hint">Give fields and woods an owner (in Feature Properties) to colour them by owner.</p>
+              ) : (
+                <>
+                  <label className="check">
+                    <input type="checkbox" checked={settings.showOwners} onChange={(e) => set('showOwners', e.target.checked)} />
+                    Highlight by owner
+                  </label>
+                  <label className={`check ${settings.showOwners ? '' : 'disabled'}`}>
+                    <input type="checkbox" disabled={!settings.showOwners} checked={settings.showLegend}
+                      onChange={(e) => set('showLegend', e.target.checked)} />
+                    Legend
+                  </label>
+                  <div className={`owner-list ${settings.showOwners ? '' : 'disabled'}`}>
+                    {owners.map(o => (
+                      <div key={o} className="owner-item">
+                        <input type="checkbox" disabled={!settings.showOwners}
+                          checked={!settings.hiddenOwners.includes(o)} onChange={() => toggleIn('hiddenOwners', o)} />
+                        <input type="color" disabled={!settings.showOwners} value={ownerColors[o] || '#888888'}
+                          onChange={(e) => setOwnerColors({ ...ownerColors, [o]: e.target.value })} />
+                        <span>{o}</span>
+                      </div>
+                    ))}
                   </div>
-                </button>
-              ))}
-            </div>
+                </>
+              )}
+            </section>
+
+            <section>
+              <h3>Categories</h3>
+              <div className="button-row">
+                <button className="link-btn" onClick={() => set('hiddenTypes', [])}>All</button>
+                <button className="link-btn" onClick={() => set('hiddenTypes', [...presentTypes])}>None</button>
+              </div>
+              {FEATURE_GROUPS.map(g => {
+                const types = FEATURE_TYPES.filter(t => t.group === g && presentTypes.has(t.id));
+                return types.length ? (
+                  <div key={g} className="category-group">
+                    <h4>{g}</h4>
+                    {types.map(t => (
+                      <label key={t.id} className="check">
+                        <input type="checkbox" checked={!settings.hiddenTypes.includes(t.id)}
+                          onChange={() => toggleIn('hiddenTypes', t.id)} />
+                        <span className="swatch" style={{ background: t.color }} />
+                        {t.label}
+                      </label>
+                    ))}
+                  </div>
+                ) : null;
+              })}
+            </section>
+          </aside>
+
+          {/* Canvas */}
+          <div
+            className={`renderer-canvas-wrap ${isDragging ? 'dragging' : ''}`}
+            ref={scrollContainerRef}
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
+          >
+            <canvas
+              ref={canvasRef}
+              style={{
+                width: `${layout.W * zoom}px`,
+                height: `${layout.H * zoom}px`
+              }}
+            />
           </div>
-
-          <div className="control-divider" />
-
-          <div className="adjustment-grid">
-            <div className="adj-group">
-              <label>Zoom: {Math.round(zoom * 100)}%</label>
-              <input 
-                type="range" 
-                min="0.2" 
-                max="1.5" 
-                step="0.05" 
-                value={zoom} 
-                onChange={(e) => setZoom(parseFloat(e.target.value))} 
-              />
-            </div>
-            <div className="adj-group">
-              <label>Font Size: {Math.round(fontScale * 100)}%</label>
-              <input 
-                type="range" 
-                min="0.5" 
-                max="2.5" 
-                step="0.1" 
-                value={fontScale} 
-                onChange={(e) => setFontScale(parseFloat(e.target.value))} 
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Canvas */}
-        <div 
-          className={`renderer-canvas-wrap ${isDragging ? 'dragging' : ''}`}
-          ref={scrollContainerRef}
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onMouseLeave={onMouseUp}
-        >
-          <canvas 
-            ref={canvasRef} 
-            style={{ 
-              width: `${2400 * zoom}px`, 
-              height: `${1600 * zoom}px` 
-            }} 
-          />
         </div>
 
         {/* Footer */}
         <div className="renderer-footer">
+          <span className="renderer-size">
+            {layout.mmW ? `${PAPERS[settings.paper].name} ${settings.orientation}, ${layout.pxW} × ${layout.pxH} px (${PRINT_DPI} dpi)` : `${layout.pxW} × ${layout.pxH} px`}
+          </span>
           <button className="renderer-download" onClick={handleDownload}>
             <Download size={16} /> Download PNG
+          </button>
+          <button className="renderer-download pdf" onClick={handlePdf} disabled={busy}>
+            <FileText size={16} /> {busy ? 'Making PDF…' : 'Download PDF'}
           </button>
         </div>
       </div>

@@ -473,3 +473,37 @@
 .help-text.muted {
   color: #777;
 }
+
+/* Acres, owner and value for fields and woods */
+.land-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(39, 174, 96, 0.06);
+  border: 1px solid rgba(39, 174, 96, 0.2);
+  border-radius: 6px;
+}
+
+.land-stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.land-stat strong {
+  color: #222;
+}
+
+.owner-row {
+  display: flex;
+  gap: 6px;
+}
+
+.form-group .owner-row input.owner-color {
+  flex: 0 0 40px;
+  width: 40px;
+  padding: 2px;
+  cursor: pointer;
+}

@@ -114,7 +114,8 @@ Down the left of the render preview:
   a title (blank for none), font size and preview zoom.
 - **Labels & Land**: labels on/off, and acres and land value under field names.
 - **Owners**: highlight fields and woods in their owner's colour, choose which owners are
-  shown and their colours, and a legend (with each owner's total acres and value).
+  shown and their colours, and a legend (with each owner's total acres and value). While
+  highlighting is on, every other field, wood and house is greyed out.
 - **Categories**: tick which feature types are drawn; the map is framed to what's shown.
 
 **Download PNG** or **Download PDF** (the PDF is page-sized for A4 / A3). The choices are

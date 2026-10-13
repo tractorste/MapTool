@@ -505,6 +505,13 @@ function drawLegend(ctx, entries, W, H, style, styleName, fontScale, opts) {
 // Outline and label colour for owned land, the same for every type
 const OWNED_INK = { tolkien: '#3e2723', default: '#263238' };
 
+// With owner highlighting on, these types are drawn grey unless an owner shown has them
+const GREYED_TYPES = ['field', 'grass_field', 'wood', 'house'];
+const GREY = {
+  tolkien: { fill: '#d6cfc2', stroke: '#a39b8d', label: '#8a8275' },
+  default: { fill: '#dcdcdc', stroke: '#a8a8a8', label: '#808080' },
+};
+
 // ── Main render function ──
 // opts: styleName, fontScale, title, hiddenTypes (Set), showLabels, showAcres, showValue,
 //       showOwners, hiddenOwners (Set), ownerColors, showLegend
@@ -570,13 +577,15 @@ function renderMap(canvas, allFeatures, W, H, opts) {
       // Owned land is drawn the same whether it's a field or a wood: the owner's colour
       // over plain paper, with no type colour or texture showing through.
       const oc = ownerColor(feature);
+      // With owner highlighting on, the other fields, woods and houses are greyed out
+      const grey = !oc && opts.showOwners && GREYED_TYPES.includes(fType) ? GREY[styleName] || GREY.default : null;
       // Fill
       trace();
-      if (oc) {
+      if (oc || grey) {
         ctx.fillStyle = style.bg;
         ctx.fill();
-        ctx.fillStyle = oc;
-        ctx.globalAlpha = 0.55;
+        ctx.fillStyle = oc || grey.fill;
+        ctx.globalAlpha = oc ? 0.55 : 1;
       } else {
         ctx.fillStyle = colors.fill;
         ctx.globalAlpha = styleName === 'tolkien' ? 0.5 : 0.7;
@@ -584,7 +593,7 @@ function renderMap(canvas, allFeatures, W, H, opts) {
       ctx.fill();
       ctx.globalAlpha = 1;
       // Texture
-      if (!oc) {
+      if (!oc && !grey) {
         if (fType === 'field' || fType === 'grass_field') drawGrassTexture(ctx, ring, styleName);
         if (fType === 'water' || fType === 'stream') drawWaterTexture(ctx, ring, styleName);
         if (fType === 'wood') drawWoodTexture(ctx, ring, styleName);
@@ -592,7 +601,7 @@ function renderMap(canvas, allFeatures, W, H, opts) {
       }
       // Stroke
       trace();
-      ctx.strokeStyle = oc ? OWNED_INK[styleName] || OWNED_INK.default : colors.stroke;
+      ctx.strokeStyle = oc ? OWNED_INK[styleName] || OWNED_INK.default : grey ? grey.stroke : colors.stroke;
       ctx.lineWidth = style.lineWidth;
       if (styleName === 'cartoon') ctx.lineWidth = 4;
       ctx.stroke();
@@ -609,7 +618,7 @@ function renderMap(canvas, allFeatures, W, H, opts) {
       }
 
       // Roof ridge for top-down building look
-      if ((styleName === 'cartoon' || styleName === 'tolkien') && (fType === 'building' || fType === 'house' || fType === 'shed')) {
+      if (!grey && (styleName === 'cartoon' || styleName === 'tolkien') && (fType === 'building' || fType === 'house' || fType === 'shed')) {
         const [cx, cy] = getCentroid(ring);
         ctx.beginPath();
         ctx.moveTo(cx - 10, cy);
@@ -630,7 +639,7 @@ function renderMap(canvas, allFeatures, W, H, opts) {
         }
         const [lx, ly] = labelPos(feature, project, getCentroid(ring));
         labels.push([lines, lx, ly, 'middle', rotation,
-          oc ? OWNED_INK[styleName] || OWNED_INK.default : colors.label]);
+          oc ? OWNED_INK[styleName] || OWNED_INK.default : grey ? grey.label : colors.label]);
       }
     } else if (geom.type === 'LineString') {
       const pts = geom.coordinates.map(project);

@@ -502,6 +502,9 @@ function drawLegend(ctx, entries, W, H, style, styleName, fontScale, opts) {
   ctx.restore();
 }
 
+// Outline and label colour for owned land, the same for every type
+const OWNED_INK = { tolkien: '#3e2723', default: '#263238' };
+
 // ── Main render function ──
 // opts: styleName, fontScale, title, hiddenTypes (Set), showLabels, showAcres, showValue,
 //       showOwners, hiddenOwners (Set), ownerColors, showLegend
@@ -564,29 +567,32 @@ function renderMap(canvas, allFeatures, W, H, opts) {
         ring.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
         ctx.closePath();
       };
+      // Owned land is drawn the same whether it's a field or a wood: the owner's colour
+      // over plain paper, with no type colour or texture showing through.
+      const oc = ownerColor(feature);
       // Fill
       trace();
-      ctx.fillStyle = colors.fill;
-      ctx.globalAlpha = styleName === 'tolkien' ? 0.5 : 0.7;
+      if (oc) {
+        ctx.fillStyle = style.bg;
+        ctx.fill();
+        ctx.fillStyle = oc;
+        ctx.globalAlpha = 0.55;
+      } else {
+        ctx.fillStyle = colors.fill;
+        ctx.globalAlpha = styleName === 'tolkien' ? 0.5 : 0.7;
+      }
       ctx.fill();
       ctx.globalAlpha = 1;
       // Texture
-      if (fType === 'field' || fType === 'grass_field') drawGrassTexture(ctx, ring, styleName);
-      if (fType === 'water' || fType === 'stream') drawWaterTexture(ctx, ring, styleName);
-      if (fType === 'wood') drawWoodTexture(ctx, ring, styleName);
-      if (fType === 'sand') drawSandTexture(ctx, ring, styleName);
-      // Owner highlight
-      const oc = ownerColor(feature);
-      if (oc) {
-        trace();
-        ctx.fillStyle = oc;
-        ctx.globalAlpha = 0.45;
-        ctx.fill();
-        ctx.globalAlpha = 1;
+      if (!oc) {
+        if (fType === 'field' || fType === 'grass_field') drawGrassTexture(ctx, ring, styleName);
+        if (fType === 'water' || fType === 'stream') drawWaterTexture(ctx, ring, styleName);
+        if (fType === 'wood') drawWoodTexture(ctx, ring, styleName);
+        if (fType === 'sand') drawSandTexture(ctx, ring, styleName);
       }
       // Stroke
       trace();
-      ctx.strokeStyle = colors.stroke;
+      ctx.strokeStyle = oc ? OWNED_INK[styleName] || OWNED_INK.default : colors.stroke;
       ctx.lineWidth = style.lineWidth;
       if (styleName === 'cartoon') ctx.lineWidth = 4;
       ctx.stroke();
@@ -623,7 +629,8 @@ function renderMap(canvas, allFeatures, W, H, opts) {
           if (opts.showValue && value !== null) lines.push(formatMoney(value));
         }
         const [lx, ly] = labelPos(feature, project, getCentroid(ring));
-        labels.push([lines, lx, ly, 'middle', rotation, colors.label]);
+        labels.push([lines, lx, ly, 'middle', rotation,
+          oc ? OWNED_INK[styleName] || OWNED_INK.default : colors.label]);
       }
     } else if (geom.type === 'LineString') {
       const pts = geom.coordinates.map(project);

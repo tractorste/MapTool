@@ -109,7 +109,8 @@ the top level of the map file as `owner_colors` (`{ "Owner": "#rrggbb" }`). The 
 
 Down the left of the render preview:
 
-- **Map Style**: Simple, Cartoon, Tolkien or Ordnance Survey.
+- **Map Style**: Simple, Cartoon, Tolkien, Ordnance Survey, or Print (Ordnance Survey on
+  plain white with no grid or page border).
 - **Page**: Screen (2400 × 1600), **A4** or **A3** (landscape or portrait, drawn at 300 dpi),
   a title (blank for none), font size and preview zoom.
 - **Labels & Land**: labels on/off, and acres and land value under field names.

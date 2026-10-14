@@ -111,6 +111,14 @@ const MAP_STYLES = {
   },
 };
 
+// Print: Ordnance Survey on plain white paper, with no grid or page border
+MAP_STYLES.print = {
+  ...MAP_STYLES.ordnance,
+  name: 'Print',
+  description: 'Ordnance Survey colours on plain white, for printing',
+  bg: '#ffffff',
+};
+
 // ── Geo helpers ──
 function getBBox(features) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -334,6 +342,7 @@ function drawCompass(ctx, x, y, size, style) {
 }
 
 function drawBorder(ctx, w, h, style) {
+  if (style === 'print') return;
   if (style === 'tolkien') {
     ctx.strokeStyle = '#8d6e63';
     ctx.lineWidth = 6;
@@ -528,6 +537,9 @@ function renderMap(canvas, allFeatures, W, H, opts) {
     return opts.ownerColors[owner] || null;
   };
 
+  // Owner highlighting (and greying out the rest) only once some land has an owner
+  const highlighting = opts.showOwners && ownersOf(allFeatures).length > 0;
+
   // Background
   ctx.fillStyle = style.bg;
   ctx.fillRect(0, 0, W, H);
@@ -578,7 +590,7 @@ function renderMap(canvas, allFeatures, W, H, opts) {
       // over plain paper, with no type colour or texture showing through.
       const oc = ownerColor(feature);
       // With owner highlighting on, the other fields, woods and houses are greyed out
-      const grey = !oc && opts.showOwners && GREYED_TYPES.includes(fType) ? GREY[styleName] || GREY.default : null;
+      const grey = !oc && highlighting && GREYED_TYPES.includes(fType) ? GREY[styleName] || GREY.default : null;
       // Fill
       trace();
       if (oc || grey) {
@@ -651,7 +663,7 @@ function renderMap(canvas, allFeatures, W, H, opts) {
       ctx.lineWidth = style.lineWidth * widthScale;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      if ((styleName === 'tolkien' || styleName === 'ordnance') && kind === 'fence' && fType !== 'stone_wall') {
+      if ((styleName === 'tolkien' || styleName === 'ordnance' || styleName === 'print') && kind === 'fence' && fType !== 'stone_wall') {
         ctx.setLineDash([6, 4]);
       } else if (fType === 'footpath') {
         ctx.setLineDash([style.lineWidth * 3, style.lineWidth * 2]);
